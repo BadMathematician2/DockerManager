@@ -1,0 +1,28 @@
+{
+    "name": "mykola/docker-manager",
+    "description": "Функціяонал для отримання інформації про контейнери і деякої роботи із ними",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Mykola",
+            "email": "mathematic204chnu@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "DockerManager\\" : "src"
+        }
+    },
+    "require": {},
+    "extra": {
+        "laravel": {
+            "providers": [
+                "\\DockerManager\\DockerManagerProvider"
+            ],
+            "aliases": {
+                "DockerManager":  "DockerManager\\DockerManagerFacade"
+            }
+        }
+    }
+}

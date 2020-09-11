@@ -1,5 +1,5 @@
 {
-    "name": "mykola/docker-manager",
+    "name": "mykola_docker/docker-manager",
     "description": "Функціяонал для отримання інформації про контейнери і деякої роботи із ними",
     "type": "library",
     "license": "MIT",

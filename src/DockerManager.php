@@ -28,26 +28,14 @@ class DockerManager
      */
     private $dockerProcess;
 
-    /**
-     * @var string
-     */
-    private $header;
 
+    /**
+     * DockerManager constructor.
+     * @param DockerProcess $dockerProcess
+     */
     public function __construct(DockerProcess $dockerProcess)
     {
         $this->dockerProcess = $dockerProcess;
-    }
-
-    /**
-     * Втсановлює назви ствопчиків, за умови, що між назвами має бути принаймі два пробіли.
-     * Якщо у назві є пробіл, то замінює його на '_'.
-     *
-     * @return false|string[]
-     */
-    private function getColumns() {
-        $columns = preg_replace('/\s{2,}/', '%', $this->header);
-        $columns = str_replace(' ', '_', $columns);
-        return explode('%', $columns);
     }
 
     /**
@@ -60,6 +48,69 @@ class DockerManager
         $this->updateRunning();
 
         return $this->containers;
+    }
+
+    /**
+     * Зупинає контейнер по його id.
+     * @param string $containerId
+     * @return string
+     */
+    public function stopContainer(string $containerId)
+    {
+        return $this->dockerProcess->stop($containerId);
+    }
+
+    /**
+     * Зупиняє контейнери, id яких у масиві $keys.
+     * Якщо параметр не заданий, то зупиняє всі.
+     * @param array|null $keys
+     */
+    public function stopContainers(array $keys = null)
+    {
+        if (empty($this->containers)) {
+            $this->getContainers();
+        }
+
+        if ($keys) {
+            foreach ($keys as $key) {
+                $this->stopContainer($key);
+            }
+        } else {
+            $this->stopAll();
+        }
+
+    }
+
+    /**
+     * Видаляє контейнер по id, якщо він запущений то видає exception,
+     * якщо $force - true, то запущений контейнер буде запущенно і видалено.
+     * @param string $containerId
+     * @param bool $force
+     * @return string
+     * @throws Throwable
+     */
+    public function deleteContainer(string $containerId, bool $force = false)
+    {
+        if ('' === $this->dockerProcess->remove($containerId)) {
+            throw_if(! $force, new ContainerRunningException('Container is running'));
+
+            $this->stopContainer($containerId);
+            $this->dockerProcess->remove($containerId);
+        }
+
+        return $containerId;
+    }
+
+    /**
+     * Повертає назви ствопчиків, за умови, що між назвами має бути принаймі два пробіли.
+     * Якщо у назві є пробіл, то замінює його на '_'.
+     *
+     * @return false|string[]
+     */
+    private function getColumns() {
+        $columns = preg_replace('/\s{2,}/', '%', $this->getHeader());
+        $columns = str_replace(' ', '_', $columns);
+        return explode('%', $columns);
     }
 
     /**
@@ -76,16 +127,20 @@ class DockerManager
     }
 
     /**
-     * Повертає результат команди 'docker ps -a',
-     * пергий рядок результату записується в header, решта повертається
+     * Повертає результат команди 'docker ps -a'.
      * @return false|string[]
      */
     private function getInfo()
     {
-        $result = $this->dockerProcess->dockerPsA();
-        $this->header = array_shift($result);
+        return $this->dockerProcess->getContainerListing(true);
+    }
 
-        return $result;
+    /**
+     * @return string
+     */
+    private function getHeader()
+    {
+        return $this->dockerProcess->getHeader();
     }
 
     /**
@@ -93,61 +148,24 @@ class DockerManager
      */
     private function updateRunning()
     {
-        $containers = $this->dockerProcess->dockerPs();
-        $length = stripos($this->header, $this->columns[1]);
+        $containers = $this->dockerProcess->getContainerListing();
+        $length = stripos($this->getHeader(), $this->columns[1]);
 
-        for ($i = 1; $i < count($containers) - 1; $i++) {
+        for ($i = 0; $i < count($containers) - 1; $i++) {
             $this->setRunning($length, $containers[$i]);
         }
     }
 
     /**
-     * Зупинає контейнер по його id.
-     * @param string $containerId
-     * @return string
+     * Зупиняє всі запущенні контейнери.
      */
-    public function stopContainer(string $containerId)
+    private function stopAll()
     {
-        return $this->dockerProcess->dockerStop($containerId);
-    }
-
-    /**
-     * Зупиняє контейнери, id яких у масиві $keys.
-     * Якщо параметр не заданий, то зупиняє всі.
-     * @param array|null $keys
-     */
-    public function stopContainers(array $keys = null)
-    {
-        if (empty($this->containers)) {
-            $this->getContainers();
-        }
-
-        foreach ($this->containers as $key => $value) {
+        foreach ($this->containers as $value) {
             if ($value['RUNNING']) {
-                if (null !== $keys || in_array($value[$this->columns[0]], $keys))
-                $this->stopContainer($key);
+                $this->stopContainer($value[$this->columns[0]]);
             }
         }
-    }
-
-    /**
-     * Видаляє контейнер по id, якщо він запущений то видає exception,
-     * якщо $force - true, то запущений контейнер буде запущенно і видалено.
-     * @param string $containerId
-     * @param bool $force
-     * @return string
-     * @throws Throwable
-     */
-    public function deleteContainer(string $containerId, bool $force = false)
-    {
-        if ('' === $this->dockerProcess->dockerRm($containerId)) {
-            throw_if(! $force, new ContainerRunningException('Container is running'));
-
-            $this->stopContainer($containerId);
-            $this->dockerProcess->dockerRm($containerId);
-        }
-
-        return $containerId;
     }
 
     /**
@@ -163,7 +181,7 @@ class DockerManager
 
         for ($i = 0; $i < count($this->columns) - 1; $i++) {
             $begin = $end;
-            $end = stripos($this->header, $this->columns[$i + 1]);
+            $end = stripos($this->getHeader(), $this->columns[$i + 1]);
             $result[$this->columns[$i]] = $this->trimSubstr($str, $begin, $end);
         }
 

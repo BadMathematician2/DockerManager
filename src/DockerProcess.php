@@ -13,6 +13,11 @@ use Symfony\Component\Process\Process;
 class DockerProcess
 {
     /**
+     * @var string
+     */
+    private $header;
+
+    /**
      * Створює і запускає процес.
      * @param array $command
      * @return string
@@ -26,26 +31,42 @@ class DockerProcess
     }
 
     /**
+     * Повертає контейнери.
+     * Всі, якщо параметр true, в противному випадку тільки запущенні.
+     * Також записує header.
+     * @param false $all
      * @return false|string[]
      */
-    public function dockerPs()
+    public function getContainerListing($all = false)
     {
-        return explode("\n",$this->process(['docker', 'ps']));
+        $command = ['docker', 'ps'];
+        if ($all) {
+            $command[] = '-a';
+        }
+
+        $result = explode(PHP_EOL, $this->process($command));
+        $this->header = $this->header ?? array_shift($result);
+
+        return $result;
     }
 
     /**
-     * @return false|string[]
+     * @return string
      */
-    public function dockerPsA()
+    public function getHeader()
     {
-        return explode("\n",$this->process(['docker', 'ps', '-a']));
+        if (! $this->header) {
+            $this->getContainerListing();
+        }
+
+        return $this->header;
     }
 
     /**
      * @param $containerId
      * @return string
      */
-    public function dockerRm($containerId)
+    public function remove($containerId)
     {
         return $this->process(['docker', 'rm', $containerId]);
     }
@@ -54,7 +75,7 @@ class DockerProcess
      * @param $containerId
      * @return string
      */
-    public function dockerStop($containerId)
+    public function stop($containerId)
     {
         return $this->process(['docker', 'stop', $containerId]);
     }

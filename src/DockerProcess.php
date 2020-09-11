@@ -12,8 +12,10 @@ use Symfony\Component\Process\Process;
  */
 class DockerProcess
 {
-
-    private $out;
+    /**
+     * @var array
+     */
+    private $output;
 
     /**
      * Створює і запускає процес.
@@ -29,19 +31,17 @@ class DockerProcess
     }
 
     /**
-     * Повертає контейнери.
-     * Всі, якщо параметр true, в противному випадку тільки запущенні.
-     * Також записує header.
+     * Повертає хеадер або контейнери, причому є варіант всіх або тільки запущенних.
      * @param string $key
      * @return false|string[]
      */
-    public function getResult(string $key)
+    public function getOutput(string $key)
     {
-        if (! $this->out) {
-            $this->initOut();
+        if (! $this->output) {
+            $this->initOutput();
         }
 
-        return$this->out[$key];
+        return$this->output[$key];
     }
 
 
@@ -63,15 +63,15 @@ class DockerProcess
         return $this->process(['docker', 'stop', $containerId]);
     }
 
-    private function initOut()
+    private function initOutput()
     {
         $result = explode(PHP_EOL, $this->process(['docker', 'ps']));
-        $this->out['header_running']= array_shift($result);
-        $this->out['running_containers'] = $result;
+        $this->output['header_running']= array_shift($result);
+        $this->output['running_containers'] = $result;
 
         $result = explode(PHP_EOL, $this->process(['docker', 'ps', '-a']));
-        $this->out['header_all'] = array_shift($result);
-        $this->out['all_containers'] = $result;
+        $this->output['header_all'] = array_shift($result);
+        $this->output['all_containers'] = $result;
     }
 
 }

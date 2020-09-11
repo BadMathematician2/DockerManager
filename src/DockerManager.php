@@ -175,9 +175,9 @@ class DockerManager
         for ($i = 0; $i < count($this->columns) ; $i++) {
             $begin = $end;
 
-            $end = isset($this->columns[$i + 1]) ?
-                stripos($this->getOutput('header_all'), ($this->columns[$i + 1])) :
-                strlen($str);
+            $end = isset($this->columns[$i + 1])
+                ? stripos($this->getOutput('header_all'), ($this->columns[$i + 1]))
+                : strlen($str);
             $result[$this->columns[$i]] = $this->trimSubstr($str, $begin, $end);
         }
 
@@ -198,7 +198,7 @@ class DockerManager
     {
 
         $this->containers = array_map(function ($container) use ($str, $length) {
-            if ($container[$this->columns[0]] === trim(substr($str, 0, $length))) {
+            if ($container[$this->columns[0]] === $this->trimSubstr($str, 0, $length)) {
                 $container['RUNNING'] = true;
             }
             return $container;

@@ -44,8 +44,10 @@ class DockerManager
      */
     public function getContainers()
     {
-        $this->recordAll();
-        $this->updateRunning();
+        if (! $this->containers) {
+            $this->recordAll();
+            $this->updateRunning();
+        }
 
         return $this->containers;
     }
@@ -108,7 +110,7 @@ class DockerManager
      * @return false|string[]
      */
     private function getColumns() {
-        $columns = preg_replace('/\s{2,}/', '%', $this->getHeader());
+        $columns = preg_replace('/\s{2,}/', '%', $this->getResult('header_all'));
         $columns = str_replace(' ', '_', $columns);
         return explode('%', $columns);
     }
@@ -119,38 +121,31 @@ class DockerManager
      */
     private function recordAll()
     {
-        $containers = $this->getInfo();
         $this->columns = $this->getColumns();
-        foreach ($containers as $container) {
-            $this->containers[] = $this->getContainerInfo($container);
-        }
+        $this->containers = array_map(function ($container) {
+            return $this->getContainerInfo($container);
+        }, $this->getResult('all_containers'));
+
     }
 
     /**
      * Повертає результат команди 'docker ps -a'.
      * @return false|string[]
      */
-    private function getInfo()
+    private function getResult($key)
     {
-        return $this->dockerProcess->getContainerListing(true);
+        return $this->dockerProcess->getResult($key);
     }
 
-    /**
-     * @return string
-     */
-    private function getHeader()
-    {
-        return $this->dockerProcess->getHeader();
-    }
+
 
     /**
      * Перевіряє, які контейнери запущенні і вказує це у 'RUNNING'.
      */
     private function updateRunning()
     {
-        $containers = $this->dockerProcess->getContainerListing();
-        $length = stripos($this->getHeader(), $this->columns[1]);
-
+        $containers = $this->dockerProcess->getResult('running_containers');
+        $length = stripos($this->getResult('header_running'), $this->columns[1]);
         for ($i = 0; $i < count($containers) - 1; $i++) {
             $this->setRunning($length, $containers[$i]);
         }
@@ -181,13 +176,15 @@ class DockerManager
 
         for ($i = 0; $i < count($this->columns) - 1; $i++) {
             $begin = $end;
-            $end = stripos($this->getHeader(), $this->columns[$i + 1]);
+            $end = stripos($this->getResult('header_all'), $this->columns[$i + 1]);
             $result[$this->columns[$i]] = $this->trimSubstr($str, $begin, $end);
         }
 
-        $result[$this->columns[count($this->columns) - 1]] = $this->trimSubstr($str, $end, strlen($str));
+
+        $result[$this->columns[sizeof($this->columns) - 1]] = $this->trimSubstr($str, $end, strlen($str));
 
         $result['RUNNING'] = false;
+
 
         return $result;
     }
@@ -201,12 +198,14 @@ class DockerManager
      */
     private function setRunning(int $length, string $str)
     {
-        foreach ($this->containers as $key => $value) {
-            if ($value[$this->columns[0]] === trim(substr($str, 0, $length))) {
-                $this->containers[$key]['RUNNING'] = true;
-                return null;
+
+        $this->containers = array_map(function ($container) use ($str, $length) {
+            if ($container[$this->columns[0]] === trim(substr($str, 0, $length))) {
+                $container['RUNNING'] = true;
             }
-        }
+            return $container;
+        }, $this->containers);
+
 
         return null;
     }

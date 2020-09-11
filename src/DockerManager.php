@@ -5,7 +5,7 @@ namespace DockerManager;
 
 
 use DockerManager\Exceptions\ContainerRunningException;
-use Symfony\Component\Process\Process;
+use Throwable;
 
 /**
  * Class DockerManager
@@ -14,7 +14,6 @@ use Symfony\Component\Process\Process;
 class DockerManager
 {
     /**
-     * Назви стовпчиків.
      * @var string[]
      */
     private $columns;
@@ -22,24 +21,37 @@ class DockerManager
     /**
      * @var array
      */
-    private $container;
+    private $containers;
+
+    /**
+     * @var DockerProcess
+     */
+    private $dockerProcess;
+
+    /**
+     * @var string
+     */
+    private $header;
+
+    public function __construct(DockerProcess $dockerProcess)
+    {
+        $this->dockerProcess = $dockerProcess;
+    }
 
     /**
      * Втсановлює назви ствопчиків, за умови, що між назвами має бути принаймі два пробіли.
      * Якщо у назві є пробіл, то замінює його на '_'.
      *
-     * @param string $str
+     * @return false|string[]
      */
-    private function initColumns(string $str) {
-        $columns = preg_replace('/\s{2,}/', '%', $str);
+    private function getColumns() {
+        $columns = preg_replace('/\s{2,}/', '%', $this->header);
         $columns = str_replace(' ', '_', $columns);
-        $this->columns = explode('%', $columns);
+        return explode('%', $columns);
     }
 
     /**
      * Повертає масив із усіма контейнерами.
-     * Те чи контейнер запущенний показує поле 'RUNNING': true - запущений, false - ні.
-     *
      * @return array
      */
     public function getContainers()
@@ -47,7 +59,7 @@ class DockerManager
         $this->recordAll();
         $this->updateRunning();
 
-        return $this->container;
+        return $this->containers;
     }
 
     /**
@@ -56,12 +68,24 @@ class DockerManager
      */
     private function recordAll()
     {
-        $containers = explode("\n",$this->process(['docker', 'ps', '-a']));
-        $this->initColumns($containers[0]);
-
-        for ($i = 1; $i < sizeof($containers) - 1; $i++) {
-            $this->container[] = $this->getContainerInfo($containers[0], $containers[$i]);
+        $containers = $this->getInfo();
+        $this->columns = $this->getColumns();
+        foreach ($containers as $container) {
+            $this->containers[] = $this->getContainerInfo($container);
         }
+    }
+
+    /**
+     * Повертає результат команди 'docker ps -a',
+     * пергий рядок результату записується в header, решта повертається
+     * @return false|string[]
+     */
+    private function getInfo()
+    {
+        $result = $this->dockerProcess->dockerPsA();
+        $this->header = array_shift($result);
+
+        return $result;
     }
 
     /**
@@ -69,9 +93,10 @@ class DockerManager
      */
     private function updateRunning()
     {
-        $containers = explode("\n",$this->process(['docker', 'ps']));
-        $length = stripos($containers[0], $this->columns[1]);
-        for ($i = 1; $i < sizeof($containers) - 1; $i++) {
+        $containers = $this->dockerProcess->dockerPs();
+        $length = stripos($this->header, $this->columns[1]);
+
+        for ($i = 1; $i < count($containers) - 1; $i++) {
             $this->setRunning($length, $containers[$i]);
         }
     }
@@ -83,35 +108,43 @@ class DockerManager
      */
     public function stopContainer(string $containerId)
     {
-        return $this->process(['docker', 'stop', $containerId]);
+        return $this->dockerProcess->dockerStop($containerId);
     }
 
     /**
-     * Зупиняє всі запущенні контейнери.
+     * Зупиняє контейнери, id яких у масиві $keys.
+     * Якщо параметр не заданий, то зупиняє всі.
+     * @param array|null $keys
      */
-    public function stopAllContainers()
+    public function stopContainers(array $keys = null)
     {
-        if (empty($this->container)) {
+        if (empty($this->containers)) {
             $this->getContainers();
         }
 
-        foreach ($this->container as $key => $value) {
+        foreach ($this->containers as $key => $value) {
             if ($value['RUNNING']) {
+                if (null !== $keys || in_array($value[$this->columns[0]], $keys))
                 $this->stopContainer($key);
             }
         }
     }
 
     /**
-     * Видаляє контейнер по id, якщо він запущений то видає exception
+     * Видаляє контейнер по id, якщо він запущений то видає exception,
+     * якщо $force - true, то запущений контейнер буде запущенно і видалено.
      * @param string $containerId
+     * @param bool $force
      * @return string
-     * @throws ContainerRunningException
+     * @throws Throwable
      */
-    public function deleteContainer(string $containerId)
+    public function deleteContainer(string $containerId, bool $force = false)
     {
-        if ('' === $this->process(['docker', 'rm', $containerId])) {
-            throw new ContainerRunningException('Container is running');
+        if ('' === $this->dockerProcess->dockerRm($containerId)) {
+            throw_if(! $force, new ContainerRunningException('Container is running'));
+
+            $this->stopContainer($containerId);
+            $this->dockerProcess->dockerRm($containerId);
         }
 
         return $containerId;
@@ -119,23 +152,22 @@ class DockerManager
 
     /**
      * Розбиває інформацію про контейнер на стовпики, яка міститься в $str.
-     * $template - це рядок із назвами стовпчиків, базуючись на який ми будемо ділити інформацію в $str/
-     * @param string $template
+     * $this-header - це рядок із назвами стовпчиків, базуючись на який ми будемо ділити інформацію в $str.
      * @param string $str
      * @return array
      */
-    private function getContainerInfo(string $template, string $str)
+    private function getContainerInfo(string $str)
     {
         $end = 0;
         $result = [];
 
-        for ($i = 0; $i < sizeof($this->columns) - 1; $i++) {
+        for ($i = 0; $i < count($this->columns) - 1; $i++) {
             $begin = $end;
-            $end = stripos($template, $this->columns[$i + 1]);
+            $end = stripos($this->header, $this->columns[$i + 1]);
             $result[$this->columns[$i]] = $this->trimSubstr($str, $begin, $end);
         }
 
-        $result[$this->columns[sizeof($this->columns) - 1]] = $this->trimSubstr($str, $end, strlen($str));
+        $result[$this->columns[count($this->columns) - 1]] = $this->trimSubstr($str, $end, strlen($str));
 
         $result['RUNNING'] = false;
 
@@ -151,9 +183,9 @@ class DockerManager
      */
     private function setRunning(int $length, string $str)
     {
-        foreach ($this->container as $key => $value) {
+        foreach ($this->containers as $key => $value) {
             if ($value[$this->columns[0]] === trim(substr($str, 0, $length))) {
-                $this->container[$key]['RUNNING'] = true;
+                $this->containers[$key]['RUNNING'] = true;
                 return null;
             }
         }
@@ -173,16 +205,4 @@ class DockerManager
         return trim(substr($str, $begin, $end - $begin));
     }
 
-    /**
-     * Створює і запускає процес.
-     * @param array $command
-     * @return string
-     */
-    private function process(array $command)
-    {
-        $process = new Process($command);
-        $process->run();
-
-        return $process->getOutput();
-    }
 }

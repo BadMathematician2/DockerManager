@@ -15,7 +15,7 @@ class DockerManagerProvider extends ServiceProvider
     public function register()
     {
         $this->app->singleton('DockerManager', function () {
-            return new DockerManager();
+            return $this->app->make(DockerManager::class);
         });
     }
 }

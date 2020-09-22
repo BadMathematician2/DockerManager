@@ -14,9 +14,6 @@
             "DockerManager\\" : "src"
         }
     },
-    "require": {
-        "php": "7.3.*"
-    },
     "extra": {
         "laravel": {
             "providers": [
